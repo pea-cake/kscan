@@ -1,14 +1,14 @@
 # Kscan-简单的资产测绘工具
-<a href="https://github.com/lcvvvv/kscan"><img alt="Release" src="https://img.shields.io/badge/golang-1.6+-9cf"></a>
-<a href="https://github.com/lcvvvv/kscan"><img alt="Release" src="https://img.shields.io/badge/kscan-1.76-ff69b4"></a>
+<a href="https://github.com/lcvvvv/kscan"><img alt="Release" src="https://img.shields.io/badge/golang-1.8+-9cf"></a>
+<a href="https://github.com/lcvvvv/kscan"><img alt="Release" src="https://img.shields.io/badge/kscan-1.86-ff69b4"></a>
 <a href="https://github.com/lcvvvv/kscan"><img alt="Release" src="https://img.shields.io/badge/LICENSE-GPL-important"></a>
 ![GitHub Repo stars](https://img.shields.io/github/stars/lcvvvv/kscan?color=success)
 ![GitHub forks](https://img.shields.io/github/forks/lcvvvv/kscan)
 ![GitHub all release](https://img.shields.io/github/downloads/lcvvvv/kscan/total?color=blueviolet) 
 
-[[中文 Readme]](https://github.com/lc~~~~vvvv/kscan/blob/master/README.md)
+[[中文 Readme]][url-doczh]
 |
-[[English Readme]](https://github.com/lcvvvv/kscan/blob/master/README_ENG.md)  
+[[English Readme]][url-docen]
 
 ## 0 免责声明（~~作者没有参加XX行动，别溯了~~）
 
@@ -27,17 +27,18 @@
 ## 1 简介
 
 ```
- _   __
-|#| /#/    轻量级资产测绘工具 by：kv2	
-|#|/#/   _____  _____     *     _   _
-|#.#/   /Edge/ /Forum|   /#\   |#\ |#|
-|##|   |#|___  |#|      /###\  |##\|#|
-|#.#\   \#####\|#|     /#/_\#\ |#.#.#|
-|#|\#\ /\___|#||#|____/#/###\#\|#|\##|
-|#| \#\\#####/ \#####/#/     \#\#| \#|
+     _   __
+    /#| /#/   轻量综合扫描工具 by：kv2
+    |#|/#/  _____  _____     *     _   _
+    |#.#/  /Edge/ /Forum\   /#\   /#\ /#\
+    |##|  |#|____ |#|      /Kv2\  |##\|#|
+    |#.#\  \r0cky\|#|     /#/_\#\ |#.#.#|
+    |#|\#\/\___|#||#|____/#/Rui\#\|#|\##|
+    \#| \#\lcvvvv/ \aels/#/ v1.87#\#/ \#/
+	
 ```
 
-Kscan是一款纯go开发的全方位扫描器，具备端口扫描、协议检测、指纹识别，暴力破解等功能。支持协议1200+，协议指纹10000+，应用指纹2000+，暴力破解协议10余种。 
+Kscan是一款纯go开发的全方位扫描器，具备端口扫描、协议检测、指纹识别，暴力破解等功能。支持协议1200+，协议指纹10000+，应用指纹20000+，暴力破解协议10余种。 
 
 ## 2 写在前面
 
@@ -65,7 +66,7 @@ Kscan目前具备3种输入目标的方式
 IP地址：114.114.114.114
 IP地址段：114.114.114.114-115.115.115.115
 URL地址：https://www.baidu.com
-文件地址：file:/tmp/target.txt
+文件地址：/tmp/target.txt
 ```
 
 - --spy 可添加--scan参数可对存活C段进行端口扫描和指纹识别，否则将只检测存活的网段
@@ -85,7 +86,7 @@ fofa搜索关键字：将直接返回fofa搜索结果
 ## 5 使用方法
 
 ```
-usage: kscan [-h,--help,--fofa-syntax] (-t,--target,-f,--fofa,--touch,--spy) [-p,--port|--top] [-o,--output] [-oJ] [--proxy] [--threads] [--path] [--host] [--timeout] [-Pn] [-Cn] [-sV] [--check] [--encoding] [--hydra] [hydra options] [fofa options]
+usage: kscan [-h,--help,--fofa-syntax] (-t,--target,-f,--fofa,--spy) [-p,--port|--top] [-o,--output] [-oJ] [--proxy] [--threads] [--path] [--host] [--timeout] [-Pn] [-Cn] [-sV] [--check] [--encoding] [--hydra] [hydra options] [fofa options]
 
 
 optional arguments:
@@ -101,11 +102,11 @@ optional arguments:
                   (空)、192、10、172、all、指定IP地址(将探测该IP地址B段存活网关)
   --check         针对目标地址做指纹识别，仅不会进行端口探测
   --scan          将针对--fofa、--spy提供的目标对象，进行端口扫描和指纹识别
-  --touch         获取指定端口返回包，可以使用此次参数获取返回包，完善指纹库，格式为：IP:PORT
   -p , --port     扫描指定端口，默认会扫描TOP400，支持：80,8080,8088-8090
+  -eP, --excluded-port 跳过扫描指定的端口，支持：80,8080,8088-8090
   -o , --output   将扫描结果保存到文件
   -oJ             将扫描结果使用json格式保存到文件
-  -Pn          	  使用此参数后，将不会进行智能存活性探测，现在默认会开启智能存活性探测，提高效率
+  -Pn          	使用此参数后，将不会进行智能存活性探测，现在默认会开启智能存活性探测，提高效率
   -Cn             使用此参数后，控制台输出结果将不会带颜色
   -Dn             使用此参数后，将关闭CDN识别功能
   -sV             使用此参数后，将对所有端口进行全探针探测，此参数极度影响效率，慎用！
@@ -136,25 +137,23 @@ fofa options:
 
 ### 6.1 端口扫描模式
 
-![WechatIMG986](assets/Kscan_v1.6/WechatIMG986.png)
+![WechatIMG986](assets/端口扫描演示.png)
 
 ### 6.2 存活网段探测
 
-![WechatIMG988](assets/Kscan_v1.6/WechatIMG988.png)
+![WechatIMG988](assets/存活网段检测演示.jpg)
 
 ### 6.3 Fofa结果检索
 
-![WechatIMG989](assets/Kscan_v1.6/WechatIMG989.png)
+![WechatIMG989](assets/Fofa结果检索演示.png)
 
-### 6.3 暴力破解
+### 6.4 暴力破解
 
-![WechatIMG996](assets/Kscan_v1.6/WechatIMG996.png)
+![WechatIMG996](assets/Hydra功能演示.png)
 
-![WechatIMG996](assets/Kscan_v1.6/WechatIMG1018.png)
+### 6.5 CDN识别
 
-### 6.4 CDN检测、归属地识别
-
-![iShot2022-04-24_18.23.41](assets/kscan_v1.7/iShot2022-04-24_18.23.41.png)
+![WechatIMG996](assets/CDN识别演示.jpg)
 
 ## 7 特别感谢
 
@@ -177,3 +176,6 @@ fofa options:
 ## 8 文末
 
 Github项目地址（BUG、需求、规则欢迎提交）: https://github.com/lcvvvv/kscan
+
+[url-doczh]: README.md
+[url-docen]: README_ENG.md

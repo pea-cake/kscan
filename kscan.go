@@ -1,37 +1,39 @@
 package main
 
 import (
+	"embed"
 	"fmt"
-	"github.com/lcvvvv/gonmap"
-	"github.com/lcvvvv/gonmap/lib/httpfinger"
 	"kscan/app"
 	"kscan/core/cdn"
 	"kscan/core/fofa"
+	"kscan/core/hydra"
+	"kscan/core/scanner"
 	"kscan/core/slog"
 	"kscan/core/spy"
-	"kscan/core/stdio"
 	"kscan/core/tips"
-	"kscan/core/touch"
 	"kscan/lib/color"
 	"kscan/lib/misc"
-	"kscan/lib/pool"
 	"kscan/run"
 	"os"
 	"runtime"
-	"strconv"
 	"time"
+
+	"github.com/lcvvvv/appfinger"
+	"github.com/lcvvvv/gonmap"
+	"github.com/lcvvvv/pool"
+	"github.com/lcvvvv/stdio"
 )
 
 //logo信息
 const logo = `
      _   __
     /#| /#/ 
-    |#|/#/   _____  _____     *     _   _
-    |#.#/   /Edge/ /Forum|   /#\   |#\ |#\
-    |##|   |#|____ |#|      /kv2\  |##\|#|
-    |#.#\   \r0cky\|#|     /#/_\#\ |#.#.#|
-    |#|\#\ /\___|#||#|____/#/###\#\|#|\##|
-    \#| \#\\lcvvvv/ \aels/#/ v1.76#\#| \#/
+    |#|/#/  _____  _____     *     _   _
+    |#.#/  /Edge/ /Forum\   /#\   /#\ /#\
+    |##|  |#|____ |#|      /Kv2\  |##\|#|
+    |#.#\  \r0cky\|#|     /#/_\#\ |#.#.#|
+    |#|\#\/\___|#||#|____/#/Rui\#\|#|\##|
+    \#| \#\lcvvvv/ \aels/#/ v1.87#\#/ \#/
 
 `
 
@@ -46,14 +48,17 @@ optional arguments:
                   IP地址段：114.114.114.114-115.115.115.115
                   URL地址：https://www.baidu.com
                   文件地址：file:/tmp/target.txt
+                  剪切板: paste or clipboard
   --spy           网段探测模式，此模式下将自动探测主机可达的内网网段可接收参数为：
                   (空)、192、10、172、all、指定IP地址(将探测该IP地址B段存活网关)
+options:
   --check         针对目标地址做指纹识别，仅不会进行端口探测
   --scan          将针对--fofa、--spy提供的目标对象，进行端口扫描和指纹识别
-  --touch         获取指定端口返回包，可以使用此次参数获取返回包，完善指纹库，格式为：IP:PORT
   -p , --port     扫描指定端口，默认会扫描TOP400，支持：80,8080,8088-8090
+  -eP, --excluded-port 跳过扫描指定的端口，支持：80,8080,8088-8090
   -o , --output   将扫描结果保存到文件
   -oJ             将扫描结果使用json格式保存到文件
+  -oC             将扫描结果使用csv格式保存到文件
   -Pn          	  使用此参数后，将不会进行智能存活性探测，现在默认会开启智能存活性探测，提高效率
   -Cn             使用此参数后，控制台输出结果将不会带颜色。
   -Dn             使用此参数后，将关闭CDN识别功能
@@ -65,7 +70,8 @@ optional arguments:
   --host          指定所有请求的头部Host值
   --timeout       设置超时时间
   --encoding      设置终端输出编码，可指定为：gb2312、utf-8
-  --match         对资产返回banner进行检索，存在关键字的，才会显示，否则不会显示
+  --match         对资产返回banner进行检索，剔除不存在关键字的结果记录
+  --not-match     对资产返回banner进行检索，剔除存在关键字的结果记录
   --hydra         自动化爆破支持协议：ssh,rdp,ftp,smb,mysql,mssql,oracle,postgresql,mongodb,redis,默认会开启全部
 hydra options:
    --hydra-user   自定义hydra爆破用户名:username or user1,user2 or file:username.txt
@@ -79,7 +85,7 @@ fofa options:
    --fofa-fix-keyword 修饰keyword，该参数中的{}最终会替换成-f参数的值
 `
 
-const usage = "usage: kscan [-h,--help,--fofa-syntax] (-t,--target,-f,--fofa,--touch) [--spy] [-p,--port|--top] [-o,--output] [-oJ] [--proxy] [--threads] [--path] [--host] [--timeout] [-Pn] [-Cn] [-sV] [--check] [--encoding] [--hydra] [hydra options] [fofa options]\n\n"
+const usage = "usage: kscan [-h,--help,--fofa-syntax] (-t,--target,-f,--fofa,--spy]) [options] [hydra options] [fofa options]\n\n"
 
 const syntax = `title="beijing"			从标题中搜索"北京"			-
 header="elastic"		从http头中搜索"elastic"			-
@@ -131,8 +137,6 @@ func main() {
 	//环境初始化
 	Init()
 
-	//校验升级情况
-	//app.CheckUpdate()
 	//下载qqwry
 	if app.Setting.DownloadQQwry == true {
 		slog.Println(slog.INFO, "现在开始下载最新qqwry，请耐心等待！")
@@ -148,42 +152,43 @@ func main() {
 
 	//spy模块启动
 	if app.Setting.Spy != "None" {
-		InitSpy()
+		spy.Keyword = app.Setting.Spy
+		spy.Scan = app.Setting.Scan
 		spy.Start()
 		if spy.Scan {
-			app.Setting.HostTarget = spy.Target
+			app.Setting.Target = spy.Target
 		}
 	}
+
 	//fofa模块初始化
 	if len(app.Setting.Fofa) > 0 {
 		InitFofa()
+		fofa.Run()
+		if app.Setting.Check == false && app.Setting.Scan == false {
+			slog.Println(slog.WARN, "可以使用--check参数对fofa扫描结果进行存活性及指纹探测，也可以使用--scan参数对fofa扫描结果进行端口扫描")
+		}
+		if app.Setting.Check == true {
+			app.Setting.Target = fofa.GetUrlTarget()
+			slog.Println(slog.WARN, "check参数已启用，现在将对fofa扫描结果进行存活性及指纹探测")
+		}
+		if app.Setting.Scan == true {
+			app.Setting.Target = fofa.GetHostTarget()
+			slog.Println(slog.WARN, "scan参数已启用，现在将对fofa扫描结果进行端口扫描及指纹探测")
+		}
+	}
+	//Hydra模块初始化
+	if app.Setting.Hydra == true {
+		slog.Println(slog.INFO, "hydra模块已开启，开始监听暴力破解任务")
+		slog.Println(slog.WARN, "当前已开启的hydra模块为：", misc.Intersection(hydra.ProtocolList, app.Setting.HydraMod))
+		//加载Hydra模块自定义字典
+		hydra.InitCustomAuthMap(app.Setting.HydraUser, app.Setting.HydraPass)
 	}
 	//kscan模块启动
-	if len(app.Setting.UrlTarget) > 0 || len(app.Setting.HostTarget) > 0 {
+	if len(app.Setting.Target) > 0 {
 		//扫描模块初始化
 		InitKscan()
 		//开始扫描
-		run.Start(app.Setting)
-	}
-	//touch模块启动
-	if app.Setting.Touch != "None" {
-		gonmap.Init(9)
-		gonmap.SetTimeout(app.Setting.Timeout)
-		gonmap.SetLogger(slog.Debug())
-		//开启全探针模式
-		gonmap.SetScanVersion()
-		tcpBanner := touch.Touch(app.Setting.Touch)
-		slog.Println(slog.INFO, "Netloc：", tcpBanner.Target.URI())
-		slog.Println(slog.INFO, "Status：", tcpBanner.StatusDisplay())
-		if tcpBanner.Status() == gonmap.Matched {
-			slog.Println(slog.INFO, "ProbesName：", tcpBanner.TcpFinger.ProbeName)
-			slog.Println(slog.INFO, "MatchedRegex：", tcpBanner.TcpFinger.MatchRegexString)
-			slog.Println(slog.INFO, "Protocol：", tcpBanner.TcpFinger.Service)
-		}
-		slog.Println(slog.INFO, "Length：", tcpBanner.Response.Length())
-		slog.Println(slog.INFO, "Response：")
-		quoteResponse := strconv.Quote(tcpBanner.Response.Value())
-		slog.Println(slog.DATA, quoteResponse[1:len(quoteResponse)-1])
+		run.Start()
 	}
 	//计算程序运行时间
 	elapsed := time.Since(startTime)
@@ -230,34 +235,34 @@ func Init() {
 	}
 }
 
+//go:embed static/fingerprint.txt
+var fingerprintEmbed embed.FS
+
+const (
+	qqwryPath       = "qqwry.dat"
+	fingerprintPath = "static/fingerprint.txt"
+)
+
 func InitKscan() {
-	if app.Setting.Check == true {
-		slog.Printf(slog.INFO, "成功读取URL地址:[%d]个", len(app.Setting.UrlTarget))
-	} else {
-		slog.Printf(slog.INFO, "成功读取URL地址:[%d]个,成功读取主机地址:[%d]个，待检测端口:[%d]个", len(app.Setting.UrlTarget), len(app.Setting.HostTarget), len(app.Setting.HostTarget)*len(app.Setting.Port))
-	}
 	//HTTP指纹库初始化
-	httpfinger.Init()
-	//gonmap探针/指纹库初始化
-	gonmap.Init(9)
-	//超时及日志配置
-	gonmap.SetTimeout(app.Setting.Timeout)
-	gonmap.SetLogger(slog.Debug())
-	//-sV参数配置
-	if app.Setting.ScanVersion == true {
-		gonmap.SetScanVersion()
+	fs, _ := fingerprintEmbed.Open(fingerprintPath)
+	if n, err := appfinger.InitDatabaseFS(fs); err != nil {
+		slog.Println(slog.ERROR, "指纹库加载失败，请检查【fingerprint.txt】文件", err)
+	} else {
+		slog.Printf(slog.INFO, "成功加载HTTP指纹:[%d]条", n)
 	}
-	slog.Printf(slog.INFO, "成功加载NMAP探针:[%d]个,指纹[%d]条,favicon指纹:[%d]条，keyword指纹:[%d]条", gonmap.UsedProbesCount, gonmap.UsedMatchCount, httpfinger.CountFaviconHash, httpfinger.CountKeywordFinger)
-	//gonmap应用层指纹识别初始化
-	gonmap.InitAppBannerDiscernConfig(app.Setting.Host, app.Setting.Path, app.Setting.Proxy, app.Setting.Timeout)
+	//超时及日志配置
+	gonmap.SetLogger(slog.Debug())
+	slog.Printf(slog.INFO, "成功加载NMAP探针:[%d]个,指纹[%d]条", gonmap.UsedProbesCount, gonmap.UsedMatchCount)
 	//CDN检测初始化
 	if app.Setting.CloseCDN == false {
-		if misc.FileIsExist(cdn.GetPath()) == false {
+		if _, err := os.Lstat(qqwryPath); os.IsNotExist(err) == true {
 			slog.Printf(slog.WARN, "未检测到qqwry.dat,将关闭CDN检测功能，如需开启，请执行kscan --download-qqwry下载该文件")
 			app.Setting.CloseCDN = true
 		} else {
 			slog.Printf(slog.INFO, "检测到qqwry.dat,将自动启动CDN检测功能，可使用-Dn参数关闭该功能")
-			cdn.Init()
+			scanner.CDNCheck = true
+			cdn.Init(qqwryPath)
 		}
 	}
 }
@@ -270,21 +275,4 @@ func InitFofa() {
 		slog.Println(slog.ERROR, "如果你是想从文件导入端口扫描任务，请使用-t file:/path/to/file")
 	}
 	fofa.Init(email, key)
-	fofa.Run()
-	if app.Setting.Check == false && app.Setting.Scan == false {
-		slog.Println(slog.WARN, "可以使用--check参数对fofa扫描结果进行存活性及指纹探测，也可以使用--scan参数对fofa扫描结果进行端口扫描")
-	}
-	if app.Setting.Check == true {
-		app.Setting.UrlTarget = fofa.GetUrlTarget()
-		slog.Println(slog.WARN, "check参数已启用，现在将对fofa扫描结果进行存活性及指纹探测")
-	}
-	if app.Setting.Scan == true {
-		app.Setting.HostTarget = fofa.GetHostTarget()
-		slog.Println(slog.WARN, "scan参数已启用，现在将对fofa扫描结果进行端口扫描及指纹探测")
-	}
-}
-
-func InitSpy() {
-	spy.Keyword = app.Setting.Spy
-	spy.Scan = app.Setting.Scan
 }

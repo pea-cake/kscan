@@ -2,9 +2,9 @@ package cdn
 
 import (
 	"kscan/core/slog"
-	"kscan/lib/IP"
 	"kscan/lib/dns"
 	"kscan/lib/qqwry"
+	"kscan/lib/uri"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,11 +12,13 @@ import (
 
 var database *qqwry.QQwry
 
-var filename = "qqwry.dat"
-var path = getRealPath()
-
-func Init() {
-	d, err := qqwry.NewQQwry(GetPath())
+func Init(path string) {
+	fs, err := os.OpenFile(path, os.O_RDONLY, 0400)
+	if err != nil {
+		slog.Println(slog.WARN, "qqwry open err:", err)
+		return
+	}
+	d, err := qqwry.NewQQwryFS(fs)
 	if err != nil {
 		slog.Println(slog.WARN, "qqwry init err:", err)
 		return
@@ -24,12 +26,8 @@ func Init() {
 	database = d
 }
 
-func GetPath() string {
-	return path + "/" + filename
-}
-
 func DownloadQQWry() error {
-	return qqwry.Download(GetPath())
+	return qqwry.Download("./qqwry.dat")
 }
 
 func FindWithIP(query string) (bool, string, error) {
@@ -69,7 +67,7 @@ func FindWithDomain(domain string) (bool, string, error) {
 		slog.Println(slog.DEBUG, domain, "lookupIP err :", err)
 		return false, "", err
 	}
-	if IP.IsInSameSegment(IPs) == false {
+	if uri.SameSegment(IPs...) == false {
 		return true, "域名指向多个IP地址，且不在同一网段，该域名可能使用了CDN技术", nil
 	}
 

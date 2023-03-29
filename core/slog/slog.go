@@ -2,9 +2,9 @@ package slog
 
 import (
 	"fmt"
+	"github.com/lcvvvv/stdio"
 	"io"
 	"io/ioutil"
-	"kscan/core/stdio"
 	"kscan/lib/color"
 	"log"
 	"os"

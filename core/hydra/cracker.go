@@ -13,73 +13,36 @@ import (
 	"kscan/core/hydra/smb"
 	"kscan/core/hydra/ssh"
 	"kscan/core/hydra/telnet"
-	"kscan/core/slog"
 	"kscan/lib/gotelnet"
 	"kscan/lib/grdp"
 )
 
-func rdpCracker(IPAddr string, port int) func(interface{}) interface{} {
+func rdpCracker(IPAddr string, port int) func(interface{}) error {
 	target := fmt.Sprintf("%s:%d", IPAddr, port)
 	protocol := grdp.VerifyProtocol(target)
 	//slog.Println(slog.DEBUG, "rdp protocol is :", protocol)
-	return func(i interface{}) interface{} {
+	return func(i interface{}) error {
 		info := i.(AuthInfo)
-		info.Auth.MakePassword()
 		domain := ""
-		if ok, err := rdp.Check(info.IPAddr, domain, info.Auth.Username, info.Auth.Password, info.Port, protocol); ok {
-			if err != nil {
-				slog.Printf(slog.DEBUG, "rdp://%s:%s@%s:%d:%s", info.Auth.Username, info.Auth.Password, info.IPAddr, info.Port, err)
-				return nil
-			}
-			info.Status = true
-			return info
-		}
-		return nil
+		return rdp.Check(info.IPAddr, domain, info.Auth.Username, info.Auth.Password, info.Port, protocol)
 	}
 }
 
-func smbCracker(i interface{}) interface{} {
+func smbCracker(i interface{}) error {
 	info := i.(AuthInfo)
-	info.Auth.MakePassword()
 	domain := ""
-	if ok, err := smb.Check(info.IPAddr, domain, info.Auth.Username, info.Auth.Password, info.Port); ok {
-		if err != nil {
-			slog.Printf(slog.DEBUG, "smb://%s:%s@%s:%d:%s", info.Auth.Username, info.Auth.Password, info.IPAddr, info.Port, err)
-			return nil
-		}
-		info.Status = true
-		return info
-	}
-	return nil
+	return smb.Check(info.IPAddr, domain, info.Auth.Username, info.Auth.Password, info.Port)
 }
 
-func sshCracker(i interface{}) interface{} {
+func sshCracker(i interface{}) error {
 	info := i.(AuthInfo)
-	info.Auth.MakePassword()
-	if ok, err := ssh.Check(info.IPAddr, info.Auth.Username, info.Auth.Password, info.Port); ok {
-		if err != nil {
-			slog.Printf(slog.DEBUG, "ssh://%s:%s@%s:%d:%s", info.Auth.Username, info.Auth.Password, info.IPAddr, info.Port, err)
-			return nil
-		}
-		info.Status = true
-		return info
-	}
-	return nil
+	return ssh.Check(info.IPAddr, info.Auth.Username, info.Auth.Password, info.Port)
 }
 
-func telnetCracker(serverType int) func(interface{}) interface{} {
-	return func(i interface{}) interface{} {
+func telnetCracker(serverType int) func(interface{}) error {
+	return func(i interface{}) error {
 		info := i.(AuthInfo)
-		info.Auth.MakePassword()
-		if ok, err := telnet.Check(info.IPAddr, info.Auth.Username, info.Auth.Password, info.Port, serverType); ok {
-			if err != nil {
-				slog.Printf(slog.DEBUG, "telnet://%s:%s@%s:%d:%s", info.Auth.Username, info.Auth.Password, info.IPAddr, info.Port, err)
-				return nil
-			}
-			info.Status = true
-			return info
-		}
-		return nil
+		return telnet.Check(info.IPAddr, info.Auth.Username, info.Auth.Password, info.Port, serverType)
 	}
 }
 
@@ -93,106 +56,40 @@ func getTelnetServerType(ip string, port int) int {
 	return client.MakeServerType()
 }
 
-func mysqlCracker(i interface{}) interface{} {
+func mysqlCracker(i interface{}) error {
 	info := i.(AuthInfo)
-	info.Auth.MakePassword()
-	if ok, err := mysql.Check(info.IPAddr, info.Auth.Username, info.Auth.Password, info.Port); ok {
-		if err != nil {
-			slog.Printf(slog.DEBUG, "mysql://%s:%s@%s:%d:%s", info.Auth.Username, info.Auth.Password, info.IPAddr, info.Port, err)
-			return nil
-		}
-		info.Status = true
-		return info
-	}
-	return nil
+	return mysql.Check(info.IPAddr, info.Auth.Username, info.Auth.Password, info.Port)
 }
 
-func mssqlCracker(i interface{}) interface{} {
+func mssqlCracker(i interface{}) error {
 	info := i.(AuthInfo)
-	info.Auth.MakePassword()
-	if ok, err := mssql.Check(info.IPAddr, info.Auth.Username, info.Auth.Password, info.Port); ok {
-		if err != nil {
-			slog.Printf(slog.DEBUG, "mssql://%s:%s@%s:%d:%s", info.Auth.Username, info.Auth.Password, info.IPAddr, info.Port, err)
-			return nil
-		}
-		info.Status = true
-		return info
-	}
-	return nil
+	return mssql.Check(info.IPAddr, info.Auth.Username, info.Auth.Password, info.Port)
 }
 
-func redisCracker(i interface{}) interface{} {
+func redisCracker(i interface{}) error {
 	info := i.(AuthInfo)
-	info.Auth.MakePassword()
-	if ok, err := redis.Check(info.IPAddr, info.Auth.Password, info.Port); ok {
-		if err != nil {
-			slog.Printf(slog.DEBUG, "redis://%s:%s/auth:%s,%s", info.IPAddr, info.Port, info.Auth.Password, err)
-			return nil
-		}
-		info.Status = true
-		return info
-	}
-	return nil
+	return redis.Check(info.IPAddr, info.Auth.Password, info.Port)
 }
 
-func ftpCracker(i interface{}) interface{} {
+func ftpCracker(i interface{}) error {
 	info := i.(AuthInfo)
-	info.Auth.MakePassword()
-	if ok, err := ftp.Check(info.IPAddr, info.Auth.Username, info.Auth.Password, info.Port); ok {
-		if err != nil {
-			slog.Printf(slog.DEBUG, "ftp://%s:%s@%s:%d:%s", info.Auth.Username, info.Auth.Password, info.IPAddr, info.Port, err)
-		}
-		info.Status = true
-		return info
-	}
-	return nil
+	return ftp.Check(info.IPAddr, info.Auth.Username, info.Auth.Password, info.Port)
 }
 
-func postgresqlCracker(i interface{}) interface{} {
+func postgresqlCracker(i interface{}) error {
 	info := i.(AuthInfo)
-	info.Auth.MakePassword()
-	if ok, err := postgresql.Check(info.IPAddr, info.Auth.Username, info.Auth.Password, info.Port); ok {
-		if err != nil {
-			slog.Printf(slog.DEBUG, "postgres://%s:%s@%s:%d:%s", info.Auth.Username, info.Auth.Password, info.IPAddr, info.Port, err)
-			return nil
-		}
-		info.Status = true
-		return info
-	}
-	return nil
+	return postgresql.Check(info.IPAddr, info.Auth.Username, info.Auth.Password, info.Port)
 }
 
-func oracleCracker(IPAddr string, port int) func(interface{}) interface{} {
-	sid := oracle.GetSID(IPAddr, port, oracle.ServiceName)
-	if sid == "" {
-		return nil
-	}
-	return func(i interface{}) interface{} {
+func oracleCracker(sid string) func(interface{}) error {
+	return func(i interface{}) error {
 		info := i.(AuthInfo)
-		info.Auth.MakePassword()
 		info.Auth.Other["SID"] = sid
-		if ok, err := oracle.Check(info.IPAddr, info.Auth.Username, info.Auth.Password, info.Port, sid); ok {
-			if err != nil {
-				slog.Printf(slog.DEBUG, "oracle://%s:%s@%s:%d:%s", info.Auth.Username, info.Auth.Password, info.IPAddr, info.Port, err)
-				return nil
-			}
-			info.Status = true
-			return info
-		}
-		return nil
+		return oracle.Check(info.IPAddr, info.Auth.Username, info.Auth.Password, info.Port, sid)
 	}
 }
 
-func mongodbCracker(i interface{}) interface{} {
+func mongodbCracker(i interface{}) error {
 	info := i.(AuthInfo)
-	info.Auth.MakePassword()
-	if ok, err := mongodb.Check(info.IPAddr, info.Auth.Username, info.Auth.Password, info.Port); ok {
-		if err != nil {
-			slog.Printf(slog.DEBUG, "mongodb://%s:%s@%s:%d:%s", info.Auth.Username, info.Auth.Password, info.IPAddr, info.Port, err)
-			return nil
-		}
-		info.Status = true
-		return info
-	}
-	return nil
+	return mongodb.Check(info.IPAddr, info.Auth.Username, info.Auth.Password, info.Port)
 }

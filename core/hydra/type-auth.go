@@ -8,6 +8,8 @@ type Auth struct {
 	Other    map[string]string
 }
 
+var UnauthorizedAccessVulnerabilityAuth = NewAuth()
+
 func NewAuth() Auth {
 	a := Auth{
 		Username: "",
@@ -46,4 +48,22 @@ func (a *Auth) MakePassword() {
 	if strings.Contains(a.Password, "%user%") {
 		a.Password = strings.ReplaceAll(a.Password, "%user%", a.Username)
 	}
+}
+
+func (a *Auth) Map() map[string]string {
+	var m = make(map[string]string)
+	if a.Username != "" {
+		m["Username"] = a.Username
+	}
+	if a.Password != "" {
+		m["Password"] = a.Password
+	} else {
+		m["Password"] = "空"
+	}
+	for key, value := range a.Other {
+		if value != "" {
+			m[key] = value
+		}
+	}
+	return m
 }

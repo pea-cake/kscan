@@ -1,26 +1,24 @@
 package app
 
 import (
-	"github.com/lcvvvv/gonmap/lib/urlparse"
+	"encoding/csv"
 	"kscan/core/hydra"
 	"kscan/core/slog"
-	"kscan/lib/IP"
 	"kscan/lib/misc"
 	"os"
-	"regexp"
-	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
 type Config struct {
-	HostTarget                   []string
-	UrlTarget                    []string
+	Target                       []string
 	Port                         []int
 	Output                       *os.File
-	Proxy, Host, Path, Encoding  string
-	OSEncoding, NewLine          string
-	OutputJson                   string
+	Proxy, Encoding              string
+	Path, Host                   []string
+	OutputJson                   *JSONWriter
+	OutputCSV                    *CSVWriter
 	Threads                      int
 	Timeout                      time.Duration
 	ClosePing, Check, CloseColor bool
@@ -34,47 +32,48 @@ type Config struct {
 	FofaFixKeyword string
 	FofaSize       int
 	Scan           bool
-	//touch
-	Touch string
 	//CDN检测模块
 	DownloadQQwry bool
 	CloseCDN      bool
 	//输出修饰
-	Match string
+	Match    string
+	NotMatch string
 }
 
 var Setting = New()
 
 func ConfigInit() {
 	args := Args
-	Setting.Touch = args.Touch
 	Setting.Spy = args.Spy
 	if args.Spy == "None" {
-		Setting.loadTarget(args.Target, false)
-		Setting.UrlTarget = misc.RemoveDuplicateElement(Setting.UrlTarget)
-		Setting.HostTarget = misc.RemoveDuplicateElement(Setting.HostTarget)
+		Setting.Target = args.Target
 	}
 	Setting.loadPort()
+	Setting.loadExcludedPort()
 	Setting.loadOutput()
 	Setting.loadScanPing()
 	Setting.Timeout = time.Duration(args.Timeout) * time.Second
 	Setting.Check = args.Check
+	if Setting.Check == true {
+		Setting.Port = []int{}
+	}
 	Setting.Path = args.Path
 	Setting.Proxy = args.Proxy
 	Setting.Host = args.Host
 	Setting.Threads = args.Threads
 	Setting.Encoding = args.Encoding
-	Setting.OutputJson = args.OutputJson
+	Setting.OutputJson = loadOutputJSON(args.OutputJson)
+	Setting.OutputCSV = loadOutputCSV(args.OutputCSV)
 	Setting.ScanVersion = args.ScanVersion
 	//Setting.CloseColor = args.CloseColor
 	//hydra模块
 	Setting.Hydra = args.Hydra
 	Setting.HydraUpdate = args.HydraUpdate
-	Setting.HydraUser = strParam2StrArr(args.HydraUser)
-	Setting.HydraPass = strParam2StrArr(args.HydraPass)
+	Setting.HydraUser = args.HydraUser
+	Setting.HydraPass = args.HydraPass
 	Setting.loadHydraMod(args.HydraMod)
 	//fofa模块
-	Setting.Fofa = Setting.loadFofa(args.Fofa)
+	Setting.Fofa = args.Fofa
 	Setting.FofaSize = args.FofaSize
 	Setting.FofaFixKeyword = args.FofaFixKeyword
 	Setting.Scan = args.Scan
@@ -83,54 +82,67 @@ func ConfigInit() {
 	Setting.CloseCDN = args.CloseCDN
 	//输出修饰
 	Setting.Match = args.Match
+	Setting.NotMatch = args.NotMatch
 }
 
-func (c *Config) loadTarget(expr string, recursion bool) {
-	if expr == "" {
-		return
+func loadOutputJSON(path string) *JSONWriter {
+	if path == "" {
+		return nil
 	}
-	if strings.Contains(expr, ",") {
-		for _, s := range strings.Split(expr, ",") {
-			c.loadTarget(s, true)
+	if _, err := os.Stat(path); err == nil || os.IsExist(err) {
+		slog.Println(slog.WARN, "检测到JSON输出文件已存在，将自动删除该文件：", path)
+		if err := os.Remove(path); err != nil {
+			slog.Println(slog.ERROR, "删除文件失败，请检查：", err)
 		}
-		return
 	}
-	//判断target字符串是否为文件
-	if regexp.MustCompile("^file:.+$").MatchString(expr) || misc.FileIsExist(expr) == true {
-		expr = strings.Replace(expr, "file:", "", 1)
-		err := misc.ReadLine(expr, c.loadTarget)
-		if err != nil {
-			if recursion == true {
-				slog.Println(slog.DEBUG, expr+err.Error())
-			} else {
-				slog.Println(slog.ERROR, expr+err.Error())
-			}
-		}
-		return
-	}
-	//判断target字符串是否为类IP/MASK
-	if ok := IP.FormatCheck(expr); ok {
-		c.HostTarget = append(c.HostTarget, IP.ExprToList(expr)...)
-		return
-	}
-	//判断target字符串是否为类URL
-	url, err := urlparse.Load(expr)
+	f, err := os.OpenFile(path, os.O_CREATE+os.O_RDWR, 0764)
 	if err != nil {
-		if recursion == true {
-			slog.Println(slog.DEBUG, expr+err.Error())
-		} else {
-			slog.Println(slog.ERROR, expr+err.Error())
-		}
-		return
+		slog.Println(slog.ERROR, err)
 	}
-	//属于类URL，将会对其进行针对性检测，添加至URL待扫描清单
-	c.UrlTarget = append(c.UrlTarget, expr)
-	c.HostTarget = append(c.HostTarget, url.Netloc)
+	jw := &JSONWriter{f, &sync.Mutex{}}
+	jw.f.Seek(0, 0)
+	_, err = jw.f.WriteString(`[]`)
+	if err != nil {
+		slog.Println(slog.ERROR, err)
+	}
+	return &JSONWriter{f, &sync.Mutex{}}
+}
+
+func loadOutputCSV(path string) *CSVWriter {
+	if path == "" {
+		return nil
+	}
+
+	if _, err := os.Stat(path); err == nil || os.IsExist(err) {
+		slog.Println(slog.WARN, "检测到CSV输出文件已存在，将自动删除该文件：", path)
+		if err := os.Remove(path); err != nil {
+			slog.Println(slog.ERROR, "删除文件失败，请检查：", err)
+		}
+	}
+
+	f, err := os.OpenFile(path, os.O_CREATE+os.O_RDWR, 0764)
+	if err != nil {
+		slog.Println(slog.ERROR, err)
+	}
+	f.WriteString("\xEF\xBB\xBF") // 写入UTF-8 BOM
+	w := csv.NewWriter(f)
+	writer := &CSVWriter{w, []string{
+		"URL", "Keyword", "IP", "Port", "Service", "Length",
+		"FingerPrint", "Addr",
+		"Digest", "Info", "Hostname", "OperatingSystem",
+		"DeviceType", "ProductName", "Version",
+		"FoundDomain", "FoundIP", "ICP",
+		"ProbeName", "MatchRegexString",
+		//"Header", "Cert", "Response", "Body",
+	}}
+	writer.f.Write(writer.title)
+	writer.f.Flush()
+	return writer
 }
 
 func (c *Config) loadPort() {
-	if Args.Port != "" {
-		c.Port = append(c.Port, intParam2IntArr(Args.Port)...)
+	if len(Args.Port) > 0 {
+		c.Port = append(c.Port, Args.Port...)
 	}
 	if Args.Top != 400 {
 		c.Port = append(c.Port, TOP_1000[:Args.Top]...)
@@ -138,6 +150,30 @@ func (c *Config) loadPort() {
 	if len(c.Port) == 0 {
 		c.Port = TOP_1000[:400]
 	}
+
+	c.Port = misc.RemoveDuplicateElement(c.Port)
+}
+
+func (c *Config) loadExcludedPort() {
+	if len(Args.ExcludedPort) == 0 {
+		return
+	}
+
+	var availablePort = misc.CopySlice(c.Port)
+	var ignoredPort []int
+
+	for i, p := range c.Port {
+		for _, ep := range Args.ExcludedPort {
+			if p == ep {
+				var l = len(ignoredPort)
+				availablePort = append(availablePort[:i-l], availablePort[i-l+1:]...)
+				ignoredPort = append(ignoredPort, p)
+				break
+			}
+		}
+	}
+	c.Port = availablePort
+	slog.Println(slog.WARN, "本次扫描用户屏蔽的端口:", ignoredPort)
 }
 
 func (c *Config) loadOutput() {
@@ -162,33 +198,16 @@ func (c *Config) loadScanPing() {
 	}
 }
 
-func (c *Config) loadHydraMod(expr string) {
-	if expr == "" || expr == "all" {
+func (c *Config) loadHydraMod(splice []string) {
+	if len(splice) == 0 {
 		c.HydraMod = hydra.ProtocolList
 		return
 	}
-	c.HydraMod = strParam2StrArr(expr)
-}
-
-func (c *Config) loadFofa(expr string) []string {
-	//判断对象是否为文件
-	if regexp.MustCompile("^file:.+$").MatchString(expr) {
-		path := strings.Replace(expr, "file:", "", 1)
-		return misc.ReadLineAll(path)
+	if splice[0] == "all" {
+		c.HydraMod = hydra.ProtocolList
+		return
 	}
-	//判断对象是否为多个
-	if strArr := strings.ReplaceAll(expr, "\\,", "[DouHao]"); strings.Count(strArr, ",") > 0 {
-		var passArr []string
-		for _, str := range strings.Split(strArr, ",") {
-			passArr = append(passArr, strings.ReplaceAll(str, "[DouHao]", ","))
-		}
-		return passArr
-	}
-	//对象为单个且不为空时直接返回
-	if expr != "" {
-		return []string{expr}
-	}
-	return []string{}
+	c.HydraMod = splice
 }
 
 func (c *Config) loadFofaField(expr string) []string {
@@ -209,81 +228,16 @@ func (c *Config) loadFofaField(expr string) []string {
 
 func New() Config {
 	return Config{
-		HostTarget: []string{},
-		UrlTarget:  []string{},
-		Path:       "/",
-		Port:       []int{},
-		Output:     nil,
-		Proxy:      "",
-		Host:       "",
-		Threads:    800,
-		Timeout:    0,
-		Encoding:   "utf-8",
-		OSEncoding: getOSEncoding(),
-		NewLine:    getNewline(),
+		Target:   []string{},
+		Path:     []string{"/"},
+		Port:     []int{},
+		Output:   nil,
+		Proxy:    "",
+		Host:     []string{},
+		Threads:  800,
+		Timeout:  0,
+		Encoding: "utf-8",
 	}
-}
-
-func getNewline() string {
-	if runtime.GOOS == "windows" {
-		return "\r\n"
-	} else {
-		return "\n"
-	}
-}
-
-func getOSEncoding() string {
-	if runtime.GOOS == "windows" {
-		return "gb2312"
-	} else {
-		return "utf-8"
-	}
-}
-
-func intParam2IntArr(expr string) []int {
-	var res []int
-	vArr := strings.Split(expr, ",")
-	for _, v := range vArr {
-		var vvArr []int
-		if strings.Contains(v, "-") {
-			iArr := strings.Split(v, "-")
-			if len(iArr) != 2 {
-				slog.Println(slog.ERROR, "参数输入错误！！！")
-			} else {
-				smallNum := misc.Str2Int(iArr[0])
-				bigNum := misc.Str2Int(iArr[1])
-				if smallNum >= bigNum {
-					slog.Println(slog.ERROR, "参数输入错误！！！")
-				}
-				vvArr = append(vvArr, misc.Xrange(smallNum, bigNum)...)
-			}
-		} else {
-			vvArr = append(vvArr, misc.Str2Int(v))
-		}
-		res = append(res, vvArr...)
-	}
-	return res
-}
-
-func strParam2StrArr(expr string) []string {
-	//判断对象是否为文件
-	if regexp.MustCompile("^file:.+$").MatchString(expr) {
-		path := strings.Replace(expr, "file:", "", 1)
-		return misc.ReadLineAll(path)
-	}
-	//判断对象是否为多个
-	if strArr := strings.ReplaceAll(expr, "\\,", "[DouHao]"); strings.Count(strArr, ",") > 0 {
-		var userArr []string
-		for _, str := range strings.Split(strArr, ",") {
-			userArr = append(userArr, strings.ReplaceAll(str, "[DouHao]", ","))
-		}
-		return userArr
-	}
-	//对象为单个且不为空时直接返回
-	if expr != "" {
-		return []string{expr}
-	}
-	return []string{}
 }
 
 var TOP_1000 = []int{21, 22, 23, 25, 53, 69, 80, 81, 88, 89, 110, 135, 161, 445, 139, 137,
